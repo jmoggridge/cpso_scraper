@@ -43,6 +43,7 @@ execute_search <- function(remote) {
   return(remote)
 }
 
+# get up to 10 doctors' links from one results page
 links_from_results_page <- function(remote){
   remote$findElements(using = 'tag name', value = 'a') |>
     map(~.x$getElementAttribute(attrName = 'href')) |>
@@ -51,9 +52,8 @@ links_from_results_page <- function(remote){
     keep(~str_detect(., 'https://doctors.cpso.on.ca/DoctorDetails/'))
 }
 
-
+# from search results page, find last page number
 get_total_pages <- function(remote){
-  # from search results page, find last page number
   pages <- remote$findElement(
     using = 'xpath',
     value = '//*[@id="p_lt_ctl01_pageplaceholder_p_lt_ctl03_CPSO_DoctorSearchResults_lnbLastPage"]'
@@ -63,61 +63,115 @@ get_total_pages <- function(remote){
 }
 
 
+# follow links to five results pages
 click_through_five_pages <- function(remote){
 
+  # scrape links from one results page
   goto_results_page_get_links <- function(xpath){
     remote$findElement('xpath', xpath)$clickElement()
     links_from_results_page(remote)
   }
 
+  # handle errors with results page
   possibly_get_links <- possibly(goto_results_page_get_links,
                                  otherwise = NULL)
 
+  # iterate over the five page links in the pagination section
   lst(int = str_pad(0:4, 2, pad = '0')) |>
     glue::glue_data('//*[@id="p_lt_ctl01_pageplaceholder_p_lt_ctl03_CPSO_DoctorSearchResults_rptPages_ctl{int}_lnbPage"]') |>
     map(~possibly_get_links(.))
 }
 
+# navigate to next pagination of five pages
 next_five_pages <- function(remote){
   remote$findElement('xpath', '//*[@id="p_lt_ctl01_pageplaceholder_p_lt_ctl03_CPSO_DoctorSearchResults_lnbNextGroup"]')$clickElement()
 }
 
-
+# iterate over all search results pages
 get_links_from_results <- function(remote){
   map(
-    .x = seq(ceiling(pages/5)),
+    .x = seq(ceiling(get_total_pages(remote)/5)),
     .f = ~{
       dat <- click_through_five_pages(remote)
       next_five_pages(remote)
       return(dat)
     },
-    .progress = 'Iterating over all pages'
+    .progress = 'Collecting links'
   )
 }
 
+# test for no duplicates
 all_distinct <- function(x) length(unique(x)) == length(x)
 
 
-scrape_doctor_urls <- function(){
-  # setup
-  driver <- RSelenium::rsDriver(browser = "firefox",
-                                chromever = NULL,
-                                port = netstat::free_port())
-  remote <- driver$client
+# scrape links from search for ''
+scrape_doctor_urls <- function(remote){
+
   remote$navigate("https://doctors.cpso.on.ca/?search=general")
 
   # fill in form and submit, proceed to results[1,2,3,...]
   remote |> execute_search()
 
   # go through paginated results and get urls
-  pages <- get_total_pages(remote)
   links <- get_links_from_results(remote) |>
     enframe(name = 'group', value = 'link') |>
     unnest(link) |>
-    unnest(link)
+    unnest(link) |>
+    select(link)
 
   stopifnot(all_distinct(links$link))
-  driver$server$stop()
   return(links)
 }
 
+# get text from an element and simplify to vector
+get_element_text <- function(xpath, remote){
+  remote$findElement('xpath', xpath)$getElementText() |> unlist()
+}
+
+# get data for a single doctor from their cpso page
+scrape_doctor_page <- function(link, remote){
+  remote$navigate(link)
+  lst(
+    name = '//*[@id="docTitle"]',
+    cpso_id = '/html/body/form/section/div/div/div[2]/div[3]/div[1]/h3',
+    address = '/html/body/form/section/div/div/div[2]/div[4]/section[2]/div/div[2]',
+    member_status = '/html/body/form/section/div/div/div[2]/div[3]/div[2]/div[2]/strong',
+    curr_or_past_cpso_reg_class = '/html/body/form/section/div/div/div[2]/div[3]/div[3]/div[2]',
+    info =  '/html/body/form/section/div/div/div[2]/div[4]/section[1]/div[2]'
+  ) |>
+    map(get_element_text, remote = remote)
+}
+
+
+## Main ----
+
+# setup browser
+driver <- RSelenium::rsDriver(browser = "firefox",
+                              chromever = NULL,
+                              port = netstat::free_port())
+remote <- driver$client
+
+# get all the links from the search for endocrinology + metabolism
+links <- scrape_doctor_urls(remote)
+
+# collect data from each link
+endocrinologists <-
+  links |>
+  mutate(data = map(link, scrape_doctor_page,
+                    remote = remote,
+                    .progress = 'Collecting data')) |>
+  unnest_wider(data) |>
+  mutate(
+    cpso_id = str_remove(cpso_id, '^CPS0#: '),
+    gender = info |>
+      str_extract('(Gender:.*?)\n') |>
+      str_remove_all('Gender: |\n')
+  )
+
+fs::dir_create('output')
+write_rds(endocrinologists, 'output/endocrinologists.rds')
+write_csv(endocrinologists, 'output/endocrinologists.csv')
+driver$server$stop()
+
+beepr::beep()
+cli::cli_alert_success('Finished')
