@@ -142,12 +142,17 @@ scrape_doctor_page <- function(link, remote){
     map(get_element_text, remote = remote)
 }
 
+str_cleanup <- function(x){
+  x |> str_remove(',') |> str_trim()
+}
+
 
 ## Main ----
 
 # setup browser
 driver <- RSelenium::rsDriver(browser = "firefox",
                               chromever = NULL,
+                              verbose = F,
                               port = netstat::free_port())
 remote <- driver$client
 
@@ -162,14 +167,41 @@ endocrinologists <-
                     .progress = 'Collecting data')) |>
   unnest_wider(data) |>
   mutate(
-    cpso_id = str_remove(cpso_id, '^CPS0#: '),
+    cpso_id = str_remove(cpso_id, '^CPSO#: '),
     gender = info |>
       str_extract('(Gender:.*?)\n') |>
       str_remove_all('Gender: |\n')
   )
 
+endocrinologists <- endocrinologists |>
+  transmute(
+    cpso_id = str_remove(cpso_id, '^CPSO#: '),
+    lastname = str_extract(name, '^.*?,') |> str_cleanup(),
+    firstname = str_extract(name, ',.*?$') |> str_cleanup(),
+    address,
+    gender,
+    member_status_date = member_status |>
+      str_remove('.*? as of ')  |>
+      lubridate::parse_date_time(orders = '%d %b %Y'),
+    member_status_class = member_status |>
+      str_remove('as of.*?$') |>
+      str_trim(),
+    cpso_reg_class = curr_or_past_cpso_reg_class |>
+      str_extract('.*?as of') |>
+      str_remove('as of') |>
+      str_cleanup(),
+    cpso_reg_date = curr_or_past_cpso_reg_class |>
+      str_extract('[0-9].*?$') |>
+      lubridate::parse_date_time(orders = '%d %b %Y'),
+    more_raw_info = info,
+    link
+  ) |>
+  glimpse()
+
+
+endocrinologists$address |> head()
+
 fs::dir_create('output')
-write_rds(endocrinologists, 'output/endocrinologists.rds')
 write_csv(endocrinologists, 'output/endocrinologists.csv')
 driver$server$stop()
 
