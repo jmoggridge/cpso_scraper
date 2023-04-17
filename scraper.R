@@ -127,10 +127,41 @@ scrape_doctor_urls <- function(remote){
 get_element_text <- function(xpath, remote){
   remote$findElement('xpath', xpath)$getElementText() |> unlist()
 }
+# tidies up text data
+str_cleanup <- function(x){
+  x |> str_remove(',') |> str_trim()
+}
 
-# get data for a single doctor from their cpso page
+## get the table of specialties of the current doctor page
+scrape_specialties_table <- function(remote){
+  # find the right table
+  tbl <- remote$findElement('id', 'specialties')
+  # find the body of that table
+  tbl_body <- tbl$findChildElement(using = 'tag name', 'tbody')
+  # get all the rows of that table
+  tbl_rows <- tbl_body$findChildElements(using = 'tag name', 'tr') |>
+    enframe(name = 'row', value = 'element')
+  # get td cells from each row and parse the 3 values, return table
+  tbl_rows |>
+    mutate(cells = map(
+      element,
+      ~.$findChildElements('tag name', 'td') |>
+        map(~.$getElementText()) |>
+        set_names('specialty', 'specialty_issued_date', 'specialty_type')
+    )
+    ) |>
+    unnest_wider(cells) |>
+    select(specialty, specialty_issued_date, specialty_type) |>
+    mutate(across(everything(), ~unlist(.) |> paste0()))
+}
+
+
+## get data for a single doctor from their cpso page
 scrape_doctor_page <- function(link, remote){
   remote$navigate(link)
+
+  spec_tbl <- scrape_specialties_table(remote)
+
   lst(
     name = '//*[@id="docTitle"]',
     cpso_id = '/html/body/form/section/div/div/div[2]/div[3]/div[1]/h3',
@@ -139,13 +170,10 @@ scrape_doctor_page <- function(link, remote){
     curr_or_past_cpso_reg_class = '/html/body/form/section/div/div/div[2]/div[3]/div[3]/div[2]',
     info =  '/html/body/form/section/div/div/div[2]/div[4]/section[1]/div[2]'
   ) |>
-    map(get_element_text, remote = remote)
+    map(get_element_text, remote = remote) |>
+    as_tibble_row() |>
+    mutate(spec_tbl = list(spec_tbl))
 }
-
-str_cleanup <- function(x){
-  x |> str_remove(',') |> str_trim()
-}
-
 
 ## Main ----
 
@@ -194,16 +222,36 @@ endocrinologists <- endocrinologists |>
       str_extract('[0-9].*?$') |>
       lubridate::parse_date_time(orders = '%d %b %Y'),
     more_raw_info = info,
-    link
+    link,
+    spec_tbl
   ) |>
   glimpse()
 
 
-endocrinologists$address |> head()
+endocrinologist_specialites <-
+  endocrinologists |>
+  select(cpso_id, spec_tbl) |>
+  unnest(spec_tbl) |>
+  unnest(spec_tbl) |>
+  mutate(
+    specialty_issued_date = specialty_issued_date |>
+      str_remove('Effective:') |>
+      parse_date(format = '%d %b %Y')
+    )
+
+stopifnot(
+  # check that each doctor is represented in specialties table
+  endocrinologist_specialites |> distinct(cpso_id) |> nrow() ==
+    nrow(endocrinologists)
+)
 
 fs::dir_create('output')
-write_csv(endocrinologists, 'output/endocrinologists.csv')
+write_csv(endocrinologists |> select(-spec_tbl),
+          'output/endocrinologists.csv')
+write_csv(endocrinologist_specialites,
+          'output/endocrinologists_specialties.csv')
 driver$server$stop()
 
 beepr::beep()
 cli::cli_alert_success('Finished')
+
