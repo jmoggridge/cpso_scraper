@@ -1,4 +1,4 @@
-
+## CPSO website scraper; configured for 'endocrinologist' specialty but could be generalized to collect all physicians & possibly served via webapi...
 
 # let selenium select both options under "CPSO Registration Status (required):"
 # [x] Search doctors currently registered with the CPSO
@@ -127,6 +127,7 @@ scrape_doctor_urls <- function(remote){
 get_element_text <- function(xpath, remote){
   remote$findElement('xpath', xpath)$getElementText() |> unlist()
 }
+
 # tidies up text data
 str_cleanup <- function(x){
   x |> str_remove(',') |> str_trim()

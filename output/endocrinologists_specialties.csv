@@ -156,6 +156,8 @@ cpso_id,specialty,specialty_issued_date,specialty_type
 71665,Endocrinology and Metabolism,2003-09-10,RCPSC Specialist
 98185,Pediatrics,2016-06-30,RCPSC Specialist
 98185,Endocrinology and Metabolism,2017-09-26,RCPSC Specialist
+123892,Endocrinology and Metabolism,2020-12-13,RCPSC Specialist
+123892,Internal Medicine,2019-06-30,RCPSC Specialist
 80999,Internal Medicine,2008-06-30,RCPSC Specialist
 80999,Endocrinology and Metabolism,2009-09-23,RCPSC Specialist
 110521,Internal Medicine,2018-05-08,RCPSC Specialist
@@ -677,6 +679,8 @@ cpso_id,specialty,specialty_issued_date,specialty_type
 97933,Endocrinology and Metabolism,2018-09-26,RCPSC Specialist
 81711,Internal Medicine,2015-06-03,RCPSC Specialist
 81711,Endocrinology and Metabolism,2016-09-27,RCPSC Specialist
+114336,Internal Medicine,2023-04-25,CPSO Recognized Specialist
+114336,Endocrinology and Metabolism,2023-04-25,CPSO Recognized Specialist
 75198,Pediatrics,2004-06-30,RCPSC Specialist
 75198,Endocrinology and Metabolism,2006-09-13,RCPSC Specialist
 110691,Internal Medicine,2016-08-15,CPSO Recognized Specialist
